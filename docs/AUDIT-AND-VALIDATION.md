@@ -33,7 +33,7 @@
 - ZIP includes explicit empty `Data\RustifyProfile\cache` and `data\settings` directory entries. The custom-NSIS installer purposefully does **not** embed Data so reinstall/upgrade cannot replace user state.
 - Shared publisher dry-run is mandatory, publishing is optional (dispatch checkbox), pruning disabled, `keep-releases=3`, minimum job token permission `contents:write` to make a release.
 - Same source commit + same ZIP digest + same builder commit yields the same tag to prevent accidental duplicate. Release publisher rejects a collision with different assets rather than overwriting or deleting it.
-- The optional installer-only workflow downloads an existing release **from the same builder repository**, verifies managed-release marker and SHA256SUMS, leaves the original ZIP release intact and publishes any new installer under a new r2 tag.
+- The optional installer-only workflow downloads an existing release **from the same builder repository**, verifies managed-release marker and SHA256SUMS, leaves the original ZIP release intact and publishes any new installer under a new r3 tag.
 
 ## Current evidence matrix
 
@@ -65,3 +65,7 @@
 - https://raw.githubusercontent.com/PabloSoage/Rustify/v5.6.4-beta/.github/workflows/release.yml
 - https://raw.githubusercontent.com/vhick/Portable-Package-Builder/v1.0.0/action.yml
 - https://raw.githubusercontent.com/vhick/portable-release-publisher/v1.1.1/action.yml
+
+## b1r2 compile failure fix evidence
+
+Uploaded b1r1 GitHub Actions run `logs_117437247708.zip` stopped at `scripts/compile-launcher.ps1:9` with `The variable '$LASTEXITCODE' cannot be retrieved because it has not been set.` This is a strict-mode script error, not proof of an upstream application failure. b1r2 checks the explicit `vswhere` process ExitCode and avoids reading an unset automatic variable. Further Windows compile and runtime verification pending.

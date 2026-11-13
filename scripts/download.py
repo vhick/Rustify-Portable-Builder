@@ -6,7 +6,7 @@ record = json.loads(pathlib.Path('work/resolution.json').read_text(encoding='utf
 a = record['asset']
 output = pathlib.Path('work/upstream-portable.zip')
 output.parent.mkdir(parents=True, exist_ok=True)
-req = urllib.request.Request(a['url'], headers={'User-Agent':'RustifyPortableBuilder-b1r1'})
+req = urllib.request.Request(a['url'], headers={'User-Agent':'RustifyPortableBuilder-b1r2'})
 h = hashlib.sha256()
 size = 0
 try:

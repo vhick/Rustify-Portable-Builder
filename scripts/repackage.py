@@ -28,10 +28,10 @@ def main():
     safe_unzip(z,dst,'RustifyPortable/')
     validate_stage(package)
     manifest=json.loads((package/'Other/Source/BUILD-IDENTITY.json').read_text(encoding='utf-8'))
-    if manifest.get('repository')!='PabloSoage/Rustify' or manifest.get('builder_revision')!='b1r1':
+    if manifest.get('repository')!='PabloSoage/Rustify' or manifest.get('builder_revision') not in ('b1r1','b1r2'):
         raise ValueError('Source ZIP is not built by this kit; provenance rejected')
     builder=os.environ.get('GITHUB_SHA','local')[:8]
-    release_tag=f'portable-rustify-repack-{sha(z)[:12]}-r2-{builder}'
+    release_tag=f'portable-rustify-repack-{sha(z)[:12]}-r3-{builder}'
     result={'release_tag':release_tag,'version':manifest['version'],'source_zip_sha256':sha(z)}
     Path('work/repackage-result.json').write_text(json.dumps(result,indent=2)+'\n', encoding='utf-8')
     if os.environ.get('GITHUB_OUTPUT'):

@@ -1,5 +1,5 @@
 name: Build Rustify PortableApps (official portable release)
-run-name: Rustify ${{ inputs.release_channel }} ${{ inputs.release_tag || 'latest' }} b1r1
+run-name: Rustify ${{ inputs.release_channel }} ${{ inputs.release_tag || 'latest' }} b1r2
 
 on:
   workflow_dispatch:
@@ -70,16 +70,16 @@ jobs:
         run: |
           python scripts/check-existing.py
           if ($LASTEXITCODE -ne 0) { throw 'Existing release lookup failed' }
+      - name: Compile genuine Windows x64 C++ root launcher
+        if: steps.existing.outputs.skip != 'true'
+        shell: pwsh
+        run: ./scripts/compile-launcher.ps1
       - name: Download official developer portable ZIP and verify published SHA-256
         if: steps.existing.outputs.skip != 'true'
         shell: pwsh
         run: |
           python scripts/download.py
           if ($LASTEXITCODE -ne 0) { throw 'Official binary digest verification failed' }
-      - name: Compile genuine Windows x64 C++ root launcher
-        if: steps.existing.outputs.skip != 'true'
-        shell: pwsh
-        run: ./scripts/compile-launcher.ps1
       - name: Create and independently validate PortableApps ZIP
         if: steps.existing.outputs.skip != 'true'
         id: package
@@ -101,8 +101,10 @@ jobs:
           engine: custom-nsis
           running-exe: 'App\Rustify\Rustify.exe'
           timeout-seconds: '1200'
-          package-revision: r1
+          package-revision: r2
       - name: Validate installer PE and copy validated installer to release-out
+        id: installer_verify
+        continue-on-error: true
         if: steps.installer_build.outcome == 'success'
         shell: pwsh
         env:
@@ -111,16 +113,16 @@ jobs:
           if (-not (Test-Path -LiteralPath $env:GENERATED_INSTALLER)) { throw 'Installer output missing' }
           python scripts/stage.py installer --path "$env:GENERATED_INSTALLER"
           if ($LASTEXITCODE -ne 0) { throw 'Installer PE validation failed' }
-          Copy-Item -LiteralPath $env:GENERATED_INSTALLER -Destination release-out -ErrorAction Stop
           $expected = '${{ steps.installer_build.outputs.installer-sha256 }}'
           $actual = (Get-FileHash -LiteralPath $env:GENERATED_INSTALLER -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected.ToLowerInvariant()) { throw 'Installer digest disagrees with shared action' }
+          if (-not $expected -or $actual -ne $expected.ToLowerInvariant()) { throw 'Installer digest disagrees with shared action' }
+          Copy-Item -LiteralPath $env:GENERATED_INSTALLER -Destination release-out -ErrorAction Stop
           Write-Host "STATIC-VALIDATED installer copied; sha256=$actual"
       - name: Report installer failure separately, keep verified ZIP
-        if: steps.installer_build.outcome == 'failure'
+        if: steps.installer_build.outcome == 'failure' || steps.installer_verify.outcome == 'failure'
         shell: pwsh
         run: |
-          Write-Warning 'Installer failed. The independently validated ZIP remains available for publication; installer is NOT being claimed or published.'
+          Write-Warning 'Installer generation or verification failed. The independently validated ZIP remains available for publication; installer is NOT being claimed or published.'
           'Installer: FAILED/BLOCKED. Portable ZIP: STATIC-VALIDATED.' >> $env:GITHUB_STEP_SUMMARY
       - name: Verify release packages with shared publisher dry-run (mandatory)
         if: steps.package.outcome == 'success'
@@ -129,7 +131,7 @@ jobs:
         with:
           files: 'release-out/*.zip;release-out/*.paf.exe'
           tag: ${{ steps.package.outputs.release_tag }}
-          release-title: 'Rustify ${{ steps.package.outputs.version }} PortableApps b1r1 (unofficial)'
+          release-title: 'Rustify ${{ steps.package.outputs.version }} PortableApps b1r2 (unofficial)'
           tag-prefix: portable-
           keep-releases: '3'
           prune: 'false'
@@ -140,7 +142,7 @@ jobs:
         with:
           files: 'release-out/*.zip;release-out/*.paf.exe'
           tag: ${{ steps.package.outputs.release_tag }}
-          release-title: 'Rustify ${{ steps.package.outputs.version }} PortableApps b1r1 (unofficial)'
+          release-title: 'Rustify ${{ steps.package.outputs.version }} PortableApps b1r2 (unofficial)'
           tag-prefix: portable-
           keep-releases: '3'
           prune: 'false'
@@ -160,7 +162,8 @@ jobs:
             '### Rustify PortableApps build'
             "- Upstream release: $((Get-Content work/resolution.json -Raw | ConvertFrom-Json).tag)"
             "- ZIP SHA-256: $($x.sha256)"
-            "- Installer step outcome: ${{ steps.installer_build.outcome }}"
+            "- Installer generation outcome: ${{ steps.installer_build.outcome }}"
+            "- Installer verification outcome: ${{ steps.installer_verify.outcome }}"
             "- Output release tag: $($x.release_tag)"
             '- GUI/tray/notifications/installed-app coexistence: NOT YET VERIFIED on interactive Windows.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8

@@ -162,14 +162,14 @@ def build():
     # Stage validated below, BEFORE any installer invocation.
     validate_stage(PACKAGE)
     RELEASE.mkdir(exist_ok=True)
-    filename = f"RustifyPortable_{data['tag']}_b1r1.zip"
+    filename = f"RustifyPortable_{data['tag']}_b1r2.zip"
     archive = RELEASE/filename
     if archive.exists(): raise ValueError('Refusing to overwrite ZIP')
     zip_package(PACKAGE, archive)
     validate_zip(archive)
     checksum=sha(archive)
     (WORK/'zip-sha256.txt').write_text(checksum+'  '+filename+'\n', encoding='ascii')
-    tag = data.get('candidate_release_tag') or f"portable-rustify-{data['tag']}-b1r1-{data['commit'][:8]}-{data['asset']['sha256'][:8]}-{data['builder_commit'][:8]}"
+    tag = data.get('candidate_release_tag') or f"portable-rustify-{data['tag']}-b1r2-{data['commit'][:8]}-{data['asset']['sha256'][:8]}-{data['builder_commit'][:8]}"
     if len(tag)>151: raise ValueError('Release tag exceeds publisher maximum')
     outputs = {'zip': str(archive.resolve()), 'sha256': checksum, 'release_tag': tag, 'version': data['version'], 'stage_dir': str(PACKAGE.resolve())}
     (WORK/'stage-result.json').write_text(json.dumps(outputs,indent=2)+'\n', encoding='utf-8')

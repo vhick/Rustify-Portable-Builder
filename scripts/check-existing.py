@@ -10,7 +10,7 @@ def main():
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo):
         raise ValueError('Invalid calling GitHub repository')
     url = 'https://api.github.com/repos/' + repo + '/releases/tags/' + urllib.parse.quote(tag, safe='')
-    headers = {'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'RustifyPortableBuilder-b1r1'}
+    headers = {'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'RustifyPortableBuilder-b1r2'}
     if os.getenv('GH_TOKEN'): headers['Authorization']='Bearer ' + os.environ['GH_TOKEN']
     try:
         with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=40) as response:
@@ -24,7 +24,7 @@ def main():
     if skip:
         body=release.get('body') or ''
         assets={a.get('name','') for a in release.get('assets',[])}
-        expected=f"RustifyPortable_{r['tag']}_b1r1.zip"
+        expected=f"RustifyPortable_{r['tag']}_b1r2.zip"
         if release.get('draft') or '<!-- portable-release-publisher:managed:v2 -->' not in body:
             raise RuntimeError('Release tag exists but was not safely publisher-managed; refusing overwrite')
         if expected not in assets or 'SHA256SUMS.txt' not in assets:

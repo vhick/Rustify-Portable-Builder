@@ -61,7 +61,7 @@ jobs:
           engine: custom-nsis
           running-exe: 'App\Rustify\Rustify.exe'
           timeout-seconds: '1200'
-          package-revision: r2
+          package-revision: r3
       - name: Verify installer and prepare for publication
         shell: pwsh
         env:
@@ -79,7 +79,7 @@ jobs:
         with:
           files: 'release-out/*.paf.exe'
           tag: ${{ steps.repack.outputs.release_tag }}
-          release-title: 'Rustify ${{ steps.repack.outputs.version }} installer repack r2 (unofficial)'
+          release-title: 'Rustify ${{ steps.repack.outputs.version }} installer repack r3 (unofficial)'
           tag-prefix: portable-
           keep-releases: '3'
           prune: 'false'
@@ -90,7 +90,7 @@ jobs:
         with:
           files: 'release-out/*.paf.exe'
           tag: ${{ steps.repack.outputs.release_tag }}
-          release-title: 'Rustify ${{ steps.repack.outputs.version }} installer repack r2 (unofficial)'
+          release-title: 'Rustify ${{ steps.repack.outputs.version }} installer repack r3 (unofficial)'
           tag-prefix: portable-
           keep-releases: '3'
           prune: 'false'

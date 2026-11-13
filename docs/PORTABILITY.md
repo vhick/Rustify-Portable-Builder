@@ -1,4 +1,4 @@
-# Rustify PortableApps runtime/data contract — b1r1
+# Rustify PortableApps runtime/data contract — b1r2
 
 **Mode: PORTABLEAPPS only.** No native/source-rebuilt app is produced. The actual Rustify application in the final package is the official developer's Windows x64 portable release, verified against the GitHub release asset's SHA-256 digest. The package's root launcher is compiled from readable C++ source on the Windows runner.
 

@@ -99,7 +99,7 @@ class StageIntegrationFixtureTests(unittest.TestCase):
             (src/'LICENSE').write_text('synthetic license test fixture')
             meta={'repository':'PabloSoage/Rustify','tag':'v5.6.4-beta','version':'5.6.4',
                   'channel':'beta','asset':{'sha256':stage.sha(upstream)},
-                  'commit':'a'*40,'builder_commit':'b'*40,'builder_revision':'b1r1'}
+                  'commit':'a'*40,'builder_commit':'b'*40,'builder_revision':'b1r2'}
             (w/'resolution.json').write_text(json.dumps(meta),encoding='utf-8')
             with patch.object(stage,'WORK',w), patch.object(stage,'PACKAGE',w/'RustifyPortable'), patch.object(stage,'RELEASE',root/'release-out'):
                 stage.build()
@@ -109,3 +109,37 @@ class StageIntegrationFixtureTests(unittest.TestCase):
                     self.assertIn('RustifyPortable/Data/RustifyProfile/cache/',z.namelist())
                     self.assertIn('RustifyPortable/App/Rustify/some-empty-tree/',z.namelist())
                 self.assertTrue((w/'stage-result.json').is_file())
+
+class LauncherCompileRegressionTests(unittest.TestCase):
+    def test_vswhere_uses_process_exit_code_not_unsafe_last_exit_code(self):
+        # The user's b1r1 GH Actions failed when StrictMode read an unset $LASTEXITCODE.
+        compile_ps1 = (Path(__file__).resolve().parents[1] / 'scripts/compile-launcher.ps1').read_text(encoding='utf-8')
+        self.assertIn('Start-Process -FilePath $vswhere', compile_ps1)
+        self.assertIn('if ($vsProc.ExitCode -ne 0)', compile_ps1)
+        self.assertIn('Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue', compile_ps1)
+        self.assertNotIn('if ($LASTEXITCODE -ne 0', compile_ps1)
+        self.assertIn('vcvars64.bat', compile_ps1)
+        self.assertIn('/MACHINE:X64', compile_ps1)
+
+    def test_identity_bumped_without_changing_pinned_actions(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / '.github/workflows/build-rustify.yml').read_text(encoding='utf-8')
+        resolver = (root / 'scripts/resolve.py').read_text(encoding='utf-8')
+        self.assertIn('b1r2', workflow)
+        self.assertIn('package-revision: r2', workflow)
+        self.assertIn('"builder_revision": "b1r2"', resolver)
+        self.assertIn('0112c35580e83b37eb8757ebcb949274e1631a04', workflow)
+        self.assertIn('cb64f86ac2d8c67506db5832de07f9ff58cbeaeb', workflow)
+        self.assertNotIn('b1r1', workflow)
+
+    def test_installer_validation_does_not_publish_unverified_files(self):
+        # Invalid installers must never enter release-out, but a verified ZIP stays publishable.
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / '.github/workflows/build-rustify.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Validate installer PE and copy')
+        end = workflow.index('      - name: Report installer failure', start)
+        step = workflow[start:end]
+        self.assertIn('continue-on-error: true', step)
+        self.assertLess(step.index('Get-FileHash'), step.index('Copy-Item'))
+        self.assertIn("if (-not $expected", step)
+        self.assertLess(workflow.index('      - name: Compile genuine'), workflow.index('      - name: Download official'))

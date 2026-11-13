@@ -20,7 +20,7 @@ PORTABILITY_SOURCES = {
 def api_get(path: str):
     if not path.startswith("/"):
         raise ValueError("Invalid API path")
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": "rustify-unofficial-portable-builder-b1r1", "X-GitHub-Api-Version": "2022-11-28"}
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "rustify-unofficial-portable-builder-b1r2", "X-GitHub-Api-Version": "2022-11-28"}
     if os.getenv("GH_TOKEN"):
         headers["Authorization"] = "Bearer " + os.environ["GH_TOKEN"]
     url = API + path
@@ -105,7 +105,7 @@ def resolve_commit(tag: str) -> str:
 
 def source_fetch(commit: str, relative: str) -> bytes:
     url = f"https://raw.githubusercontent.com/{REPO}/{commit}/{relative}"
-    req = urllib.request.Request(url, headers={"User-Agent": "RustifyPortableBuilder-b1r1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "RustifyPortableBuilder-b1r2"})
     try:
         with urllib.request.urlopen(req, timeout=60) as response:
             body = response.read(8_000_000)
@@ -164,13 +164,13 @@ def main():
         "prerelease": bool(r.get("prerelease")),
         "asset": {"name": asset["name"], "url": url, "sha256": digest[7:].lower(), "size": asset.get("size"), "asset_id": asset["id"]},
         "source_file_sha256": hashes,
-        "builder_revision": "b1r1",
-        "package_revision": "r1",
+        "builder_revision": "b1r2",
+        "package_revision": "r2",
         "builder_commit": os.environ.get("GITHUB_SHA", "local-uncommitted"),
         "shared_package_builder": "vhick/Portable-Package-Builder@v1.0.0",
         "shared_release_publisher": "vhick/portable-release-publisher@v1.1.1",
     }
-    identity = f"portable-rustify-{record['tag']}-b1r1-{commit[:8]}-{record['asset']['sha256'][:8]}-{record['builder_commit'][:8]}"
+    identity = f"portable-rustify-{record['tag']}-b1r2-{commit[:8]}-{record['asset']['sha256'][:8]}-{record['builder_commit'][:8]}"
     if len(identity) > 151:
         raise RuntimeError('Generated publisher tag is too long')
     record['candidate_release_tag'] = identity
