@@ -1,0 +1,7 @@
+/work/
+/release-out/
+/installer-out/
+*.obj
+*.pdb
+__pycache__/
+*.py[cod]

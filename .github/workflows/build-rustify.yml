@@ -1,0 +1,166 @@
+name: Build Rustify PortableApps (official portable release)
+run-name: Rustify ${{ inputs.release_channel }} ${{ inputs.release_tag || 'latest' }} b1r1
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: 'Source channel (beta explicitly allowed; do not mislabel as stable)'
+        required: true
+        type: choice
+        options:
+          - beta
+          - stable
+        default: beta
+      release_tag:
+        description: 'Optional exact upstream tag, e.g. v5.6.4-beta. Blank = latest in selected channel.'
+        required: false
+        type: string
+        default: ''
+      publish:
+        description: 'Publish verified output to Releases in THIS builder repository'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rustify-portable-${{ github.repository }}-${{ inputs.release_channel }}-${{ inputs.release_tag || 'latest' }}
+  cancel-in-progress: false
+
+jobs:
+  portableapps:
+    name: Resolve, verify, compile launcher, ZIP, installer, publish
+    runs-on: windows-latest
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout independent builder repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test security and packaging logic locally (no network)
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Local regression tests failed' }
+      - name: Resolve selected upstream release and verify tagged source contracts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SELECTED_CHANNEL: ${{ inputs.release_channel }}
+          SELECTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          python scripts/resolve.py --channel "$env:SELECTED_CHANNEL" --tag "$env:SELECTED_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'Release/source verification failed' }
+      - name: Skip already-published identical source/asset/builder identity
+        id: existing
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/check-existing.py
+          if ($LASTEXITCODE -ne 0) { throw 'Existing release lookup failed' }
+      - name: Download official developer portable ZIP and verify published SHA-256
+        if: steps.existing.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          python scripts/download.py
+          if ($LASTEXITCODE -ne 0) { throw 'Official binary digest verification failed' }
+      - name: Compile genuine Windows x64 C++ root launcher
+        if: steps.existing.outputs.skip != 'true'
+        shell: pwsh
+        run: ./scripts/compile-launcher.ps1
+      - name: Create and independently validate PortableApps ZIP
+        if: steps.existing.outputs.skip != 'true'
+        id: package
+        shell: pwsh
+        env:
+          RUSTIFY_STAGE_ROOT: ${{ runner.temp }}\rp\RustifyPortable
+        run: |
+          python scripts/stage.py build
+          if ($LASTEXITCODE -ne 0) { throw 'ZIP validation failed' }
+      - name: Build PortableApps-style installer (not official PortableApps.com installer)
+        if: steps.existing.outputs.skip != 'true'
+        id: installer_build
+        continue-on-error: true
+        # Immutable SHA for vhick/Portable-Package-Builder@v1.0.0
+        uses: vhick/Portable-Package-Builder@0112c35580e83b37eb8757ebcb949274e1631a04
+        with:
+          source-dir: ${{ steps.package.outputs.stage_dir }}
+          output-dir: installer-out
+          engine: custom-nsis
+          running-exe: 'App\Rustify\Rustify.exe'
+          timeout-seconds: '1200'
+          package-revision: r1
+      - name: Validate installer PE and copy validated installer to release-out
+        if: steps.installer_build.outcome == 'success'
+        shell: pwsh
+        env:
+          GENERATED_INSTALLER: ${{ steps.installer_build.outputs.installer-file }}
+        run: |
+          if (-not (Test-Path -LiteralPath $env:GENERATED_INSTALLER)) { throw 'Installer output missing' }
+          python scripts/stage.py installer --path "$env:GENERATED_INSTALLER"
+          if ($LASTEXITCODE -ne 0) { throw 'Installer PE validation failed' }
+          Copy-Item -LiteralPath $env:GENERATED_INSTALLER -Destination release-out -ErrorAction Stop
+          $expected = '${{ steps.installer_build.outputs.installer-sha256 }}'
+          $actual = (Get-FileHash -LiteralPath $env:GENERATED_INSTALLER -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected.ToLowerInvariant()) { throw 'Installer digest disagrees with shared action' }
+          Write-Host "STATIC-VALIDATED installer copied; sha256=$actual"
+      - name: Report installer failure separately, keep verified ZIP
+        if: steps.installer_build.outcome == 'failure'
+        shell: pwsh
+        run: |
+          Write-Warning 'Installer failed. The independently validated ZIP remains available for publication; installer is NOT being claimed or published.'
+          'Installer: FAILED/BLOCKED. Portable ZIP: STATIC-VALIDATED.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Verify release packages with shared publisher dry-run (mandatory)
+        if: steps.package.outcome == 'success'
+        # Immutable SHA for vhick/portable-release-publisher@v1.1.1
+        uses: vhick/portable-release-publisher@cb64f86ac2d8c67506db5832de07f9ff58cbeaeb
+        with:
+          files: 'release-out/*.zip;release-out/*.paf.exe'
+          tag: ${{ steps.package.outputs.release_tag }}
+          release-title: 'Rustify ${{ steps.package.outputs.version }} PortableApps b1r1 (unofficial)'
+          tag-prefix: portable-
+          keep-releases: '3'
+          prune: 'false'
+          dry-run: 'true'
+      - name: Publish only validated ZIP and (if successful) installer
+        if: inputs.publish && steps.package.outcome == 'success'
+        uses: vhick/portable-release-publisher@cb64f86ac2d8c67506db5832de07f9ff58cbeaeb
+        with:
+          files: 'release-out/*.zip;release-out/*.paf.exe'
+          tag: ${{ steps.package.outputs.release_tag }}
+          release-title: 'Rustify ${{ steps.package.outputs.version }} PortableApps b1r1 (unofficial)'
+          tag-prefix: portable-
+          keep-releases: '3'
+          prune: 'false'
+          dry-run: 'false'
+      - name: Report identical release was already published
+        if: steps.existing.outputs.skip == 'true'
+        shell: pwsh
+        run: |
+          $r = Get-Content work/resolution.json -Raw | ConvertFrom-Json
+          "Same validated source/binary/builder identity already published: $($r.candidate_release_tag). No redundant build ran." >> $env:GITHUB_STEP_SUMMARY
+      - name: Summary and hash
+        if: always() && steps.package.outcome == 'success'
+        shell: pwsh
+        run: |
+          $x = Get-Content work/stage-result.json -Raw | ConvertFrom-Json
+          @(
+            '### Rustify PortableApps build'
+            "- Upstream release: $((Get-Content work/resolution.json -Raw | ConvertFrom-Json).tag)"
+            "- ZIP SHA-256: $($x.sha256)"
+            "- Installer step outcome: ${{ steps.installer_build.outcome }}"
+            "- Output release tag: $($x.release_tag)"
+            '- GUI/tray/notifications/installed-app coexistence: NOT YET VERIFIED on interactive Windows.'
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8

@@ -1,0 +1,97 @@
+name: Repackage existing verified Rustify ZIP (installer only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_release_tag:
+        description: 'Existing publisher-managed release tag holding RustifyPortable ZIP and SHA256SUMS.txt'
+        required: true
+        type: string
+      publish:
+        description: 'Publish the validated installer under a NEW release tag'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rustify-repackage-${{ github.repository }}-${{ inputs.source_release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  installer-only:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download source from THIS builder repository; reject unrelated releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_TAG: ${{ inputs.source_release_tag }}
+        run: |
+          if ($env:SOURCE_TAG -notmatch '^portable-rustify-[A-Za-z0-9_.-]+$') { throw 'Invalid source tag' }
+          $body = gh release view "$env:SOURCE_TAG" --repo "$env:GITHUB_REPOSITORY" --json body --jq '.body'
+          if ($LASTEXITCODE -ne 0) { throw 'Source release lookup failed' }
+          if ($body -notmatch 'portable-release-publisher:managed:v2') { throw 'Source is not publisher-managed' }
+          New-Item -ItemType Directory -Force -Path work/source-repack | Out-Null
+          gh release download "$env:SOURCE_TAG" --repo "$env:GITHUB_REPOSITORY" --pattern 'RustifyPortable_*.zip' --dir work/source-repack
+          if ($LASTEXITCODE -ne 0) { throw 'Source ZIP download failed' }
+          gh release download "$env:SOURCE_TAG" --repo "$env:GITHUB_REPOSITORY" --pattern 'SHA256SUMS.txt' --dir work/source-repack
+          if ($LASTEXITCODE -ne 0) { throw 'Checksum download failed' }
+      - name: Authenticate source ZIP, preserve original app/build identity
+        id: repack
+        shell: pwsh
+        run: |
+          python scripts/repackage.py
+          if ($LASTEXITCODE -ne 0) { throw 'Repackage source verification failed' }
+      - name: Build updated PortableApps-style installer through pinned shared builder
+        id: make_installer
+        uses: vhick/Portable-Package-Builder@0112c35580e83b37eb8757ebcb949274e1631a04
+        with:
+          source-dir: work/RustifyPortable
+          output-dir: installer-out
+          engine: custom-nsis
+          running-exe: 'App\Rustify\Rustify.exe'
+          timeout-seconds: '1200'
+          package-revision: r2
+      - name: Verify installer and prepare for publication
+        shell: pwsh
+        env:
+          GENERATED_INSTALLER: ${{ steps.make_installer.outputs.installer-file }}
+          EXPECTED_SHA: ${{ steps.make_installer.outputs.installer-sha256 }}
+        run: |
+          python scripts/stage.py installer --path "$env:GENERATED_INSTALLER"
+          if ($LASTEXITCODE -ne 0) { throw 'Installer not a PE' }
+          $hash = (Get-FileHash -LiteralPath $env:GENERATED_INSTALLER -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:EXPECTED_SHA.ToLowerInvariant()) { throw 'Shared installer checksum mismatch' }
+          New-Item -ItemType Directory -Force -Path release-out | Out-Null
+          Copy-Item -LiteralPath $env:GENERATED_INSTALLER -Destination release-out
+      - name: Dry-run release publisher
+        uses: vhick/portable-release-publisher@cb64f86ac2d8c67506db5832de07f9ff58cbeaeb
+        with:
+          files: 'release-out/*.paf.exe'
+          tag: ${{ steps.repack.outputs.release_tag }}
+          release-title: 'Rustify ${{ steps.repack.outputs.version }} installer repack r2 (unofficial)'
+          tag-prefix: portable-
+          keep-releases: '3'
+          prune: 'false'
+          dry-run: 'true'
+      - name: Publish installer-only NEW release, leaving original ZIP release unchanged
+        if: inputs.publish
+        uses: vhick/portable-release-publisher@cb64f86ac2d8c67506db5832de07f9ff58cbeaeb
+        with:
+          files: 'release-out/*.paf.exe'
+          tag: ${{ steps.repack.outputs.release_tag }}
+          release-title: 'Rustify ${{ steps.repack.outputs.version }} installer repack r2 (unofficial)'
+          tag-prefix: portable-
+          keep-releases: '3'
+          prune: 'false'
+          dry-run: 'false'
